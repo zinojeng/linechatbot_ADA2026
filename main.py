@@ -110,7 +110,7 @@ async def ensure_file_search_store_exists(store_name: str) -> tuple[bool, str]:
         # Store doesn't exist, create it
         print(f"Creating file search store with display_name '{store_name}'...")
         store = client.file_search_stores.create(
-            display_name=store_name
+            config={'display_name': store_name}
         )
         print(f"File search store created: {store.name} (display_name: {store_name})")
         return True, store.name
