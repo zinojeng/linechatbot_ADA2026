@@ -93,12 +93,42 @@ async def download_line_content(message_id: str, file_name: str) -> Optional[Pat
         return None
 
 
+async def ensure_file_search_store_exists(store_name: str) -> bool:
+    """
+    Ensure file search store exists, create if not.
+    Returns True if store exists or was created successfully.
+    """
+    try:
+        # Try to get the store
+        store = client.file_search_stores.get(name=store_name)
+        print(f"File search store '{store_name}' already exists")
+        return True
+    except Exception as e:
+        # Store doesn't exist, create it
+        try:
+            print(f"Creating file search store '{store_name}'...")
+            store = client.file_search_stores.create(
+                name=store_name,
+                display_name=store_name
+            )
+            print(f"File search store '{store_name}' created successfully")
+            return True
+        except Exception as create_error:
+            print(f"Error creating file search store: {create_error}")
+            return False
+
+
 async def upload_to_file_search_store(file_path: Path, store_name: str, display_name: Optional[str] = None) -> bool:
     """
     Upload a file to Gemini file search store.
     Returns True if successful, False otherwise.
     """
     try:
+        # Ensure the store exists before uploading
+        if not await ensure_file_search_store_exists(store_name):
+            print(f"Failed to ensure store '{store_name}' exists")
+            return False
+
         # Upload file to file search store
         # Note: Not using display_name in config to avoid encoding issues with Chinese characters
         operation = client.file_search_stores.upload_to_file_search_store(
