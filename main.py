@@ -1,6 +1,7 @@
 from fastapi import Request, FastAPI, HTTPException
 import os
 import sys
+import asyncio
 import aiohttp
 import aiofiles
 from pathlib import Path
@@ -114,20 +115,31 @@ async def upload_to_file_search_store(file_path: Path, store_name: str, display_
     Returns True if successful, False otherwise.
     """
     try:
-        # Upload file to file search store
-        upload_config = {
-            "name": store_name,
-        }
-        if display_name:
-            upload_config["display_name"] = display_name
+        # Prepare config if display_name is provided
+        config_dict = {"display_name": display_name} if display_name else None
 
-        result = client.files.upload_to_file_search_store(
-            path=str(file_path),
-            config=upload_config
+        # Upload file to file search store
+        operation = client.file_search_stores.upload_to_file_search_store(
+            file_search_store_name=store_name,
+            file=str(file_path),
+            config=config_dict
         )
 
-        print(f"File uploaded to store '{store_name}': {result}")
-        return True
+        # Wait for operation to complete (with timeout)
+        max_wait = 60  # seconds
+        elapsed = 0
+        while not operation.done and elapsed < max_wait:
+            await asyncio.sleep(2)
+            operation = client.operations.get(operation)
+            elapsed += 2
+
+        if operation.done:
+            print(f"File uploaded to store '{store_name}': {operation}")
+            return True
+        else:
+            print(f"Upload operation timeout for store '{store_name}'")
+            return False
+
     except Exception as e:
         print(f"Error uploading to file search store: {e}")
         return False
