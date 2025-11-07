@@ -151,6 +151,17 @@ async def query_file_search(query: str, store_name: str) -> str:
     Returns the AI response text.
     """
     try:
+        # Check if file search store exists and has files
+        try:
+            store = client.file_search_stores.get(name=store_name)
+            # Check if store has any documents
+            # Note: The store object should have information about document count
+            # If no documents, guide user to upload files first
+        except Exception as store_error:
+            # Store doesn't exist - guide user to upload files
+            print(f"File search store '{store_name}' not found: {store_error}")
+            return "📁 您還沒有上傳任何檔案。\n\n請先傳送文件檔案（PDF、DOCX、TXT 等）或圖片給我，上傳完成後就可以開始提問了！"
+
         # Create FileSearch tool with store name
         tool = types.Tool(
             file_search=types.FileSearch(
@@ -176,6 +187,9 @@ async def query_file_search(query: str, store_name: str) -> str:
 
     except Exception as e:
         print(f"Error querying file search: {e}")
+        # Check if error is related to missing store
+        if "not found" in str(e).lower() or "does not exist" in str(e).lower():
+            return "📁 您還沒有上傳任何檔案。\n\n請先傳送文件檔案（PDF、DOCX、TXT 等）或圖片給我，上傳完成後就可以開始提問了！"
         return f"查詢時發生錯誤：{str(e)}"
 
 
