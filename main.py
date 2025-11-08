@@ -193,27 +193,35 @@ async def delete_document(document_name: str) -> bool:
     """
     Delete a document from file search store.
     Returns True if successful, False otherwise.
+    Note: force=True is required to permanently delete documents from File Search Store.
     """
     try:
-        # Try to use SDK method first
+        # Try to use SDK method first with force=True
         try:
             if hasattr(client.file_search_stores, 'documents'):
-                client.file_search_stores.documents.delete(name=document_name)
-                print(f"Document deleted successfully: {document_name}")
+                # Force delete is required for File Search Store documents
+                client.file_search_stores.documents.delete(
+                    name=document_name,
+                    config={'force': True}
+                )
+                print(f"Document deleted successfully with force=True: {document_name}")
                 return True
         except Exception as sdk_error:
             print(f"SDK delete failed, trying REST API: {sdk_error}")
 
-        # Fallback to REST API
+        # Fallback to REST API with force parameter
         import requests
         url = f"https://generativelanguage.googleapis.com/v1beta/{document_name}"
         headers = {'Content-Type': 'application/json'}
-        params = {'key': GOOGLE_API_KEY}
+        params = {
+            'key': GOOGLE_API_KEY,
+            'force': 'true'  # Required for File Search Store documents
+        }
 
         response = requests.delete(url, headers=headers, params=params, timeout=10)
         response.raise_for_status()
 
-        print(f"Document deleted successfully via REST API: {document_name}")
+        print(f"Document deleted successfully via REST API with force=true: {document_name}")
         return True
 
     except Exception as e:
