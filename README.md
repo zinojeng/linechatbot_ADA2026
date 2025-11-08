@@ -2,6 +2,9 @@
 
 > 一個結合 LINE Bot 與 Google Gemini File Search 的智能文件問答機器人
 
+<img width="1179" height="2556" alt="image" src="https://github.com/user-attachments/assets/4d5a4e0e-0eec-4753-a1b0-8b1e1e6d661a" />
+
+
 ## 🎯 這是什麼？
 
 想像一下：你可以把任何 PDF、Word 文件、圖片傳給 LINE Bot，然後直接問它「這份文件在講什麼？」、「幫我整理重點」、「這張圖片裡有什麼？」，Bot 就會用 AI 幫你分析並回答！
