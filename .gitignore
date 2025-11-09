@@ -7,3 +7,16 @@ __pycache__/
 .env
 uploads/
 *.log
+
+# macOS system files
+._*
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+Thumbs.db
+
+# Python virtual environment
+venv/
+env/
+.venv/

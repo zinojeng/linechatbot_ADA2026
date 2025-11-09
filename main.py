@@ -56,11 +56,45 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # Model configuration
 MODEL_NAME = "gemini-2.5-flash"
 
+# Knowledge Base configuration
+KNOWLEDGE_BASE_STORE_NAME = "chatbot_knowledge_base"  # 共用知識庫名稱
+USE_KNOWLEDGE_BASE = os.getenv("USE_KNOWLEDGE_BASE", "true").lower() == "true"  # 預設啟用知識庫
+
+# User mode storage: {user_id: "personal" or "knowledge"}
+user_modes = {}
+
+def get_user_id(event: MessageEvent) -> str:
+    """取得使用者 ID"""
+    return event.source.user_id
+
+
+def get_user_mode(user_id: str) -> str:
+    """
+    取得使用者模式：'knowledge' 或 'personal'
+    預設使用知識庫模式
+    """
+    return user_modes.get(user_id, "knowledge" if USE_KNOWLEDGE_BASE else "personal")
+
+
+def set_user_mode(user_id: str, mode: str):
+    """設定使用者模式"""
+    user_modes[user_id] = mode
+
+
 def get_store_name(event: MessageEvent) -> str:
     """
-    Get the file search store name based on the message source.
-    Returns user_id for 1-on-1 chat, group_id for group chat.
+    根據使用者模式和訊息來源，取得 file search store 名稱
+    - knowledge 模式：使用共用知識庫
+    - personal 模式：使用個人/群組文件庫
     """
+    user_id = get_user_id(event)
+    mode = get_user_mode(user_id)
+
+    # 知識庫模式：使用共用知識庫
+    if mode == "knowledge":
+        return KNOWLEDGE_BASE_STORE_NAME
+
+    # 個人模式：根據來源類型決定
     if event.source.type == "user":
         return f"user_{event.source.user_id}"
     elif event.source.type == "group":
@@ -467,6 +501,47 @@ def is_list_files_intent(text: str) -> bool:
     return any(keyword in text_lower for keyword in list_keywords)
 
 
+def is_mode_switch_intent(text: str) -> tuple[bool, str]:
+    """
+    檢查使用者是否想切換模式
+    Returns: (is_switch, mode) - mode 可為 'knowledge' 或 'personal'
+    """
+    text_lower = text.lower().strip()
+
+    # 知識庫模式關鍵字
+    knowledge_keywords = [
+        '知識庫', '知識庫模式', '使用知識庫', '切換知識庫',
+        '糖尿病', '醫療知識', '專業知識',
+        'knowledge', 'knowledge base'
+    ]
+
+    # 個人模式關鍵字
+    personal_keywords = [
+        '個人檔案', '個人模式', '我的檔案', '私人檔案',
+        '切換個人', '使用個人',
+        'personal', 'my files', 'personal mode'
+    ]
+
+    # 檢查是否包含「模式」或「切換」等字眼
+    is_mode_command = any(word in text_lower for word in ['模式', '切換', 'mode', 'switch'])
+
+    if is_mode_command:
+        if any(kw in text_lower for kw in knowledge_keywords):
+            return True, 'knowledge'
+        elif any(kw in text_lower for kw in personal_keywords):
+            return True, 'personal'
+
+    return False, ''
+
+
+def get_mode_description(mode: str) -> str:
+    """取得模式說明"""
+    if mode == 'knowledge':
+        return "📚 知識庫模式\n使用共用醫療知識庫（糖尿病照護標準 2025）回答問題"
+    else:
+        return "📁 個人模式\n使用您上傳的個人文件回答問題"
+
+
 async def send_files_carousel(event: MessageEvent, documents: list):
     """
     Send files as LINE Carousel Template.
@@ -555,24 +630,50 @@ async def handle_postback(event: PostbackEvent):
 
 async def handle_text_message(event: MessageEvent, message):
     """
-    Handle text messages - query the file search store or list files.
+    Handle text messages - switch mode, list files, or query the file search store.
     """
-    store_name = get_store_name(event)
+    user_id = get_user_id(event)
     query = message.text
+    current_mode = get_user_mode(user_id)
 
-    print(f"Received query: {query} for store: {store_name}")
+    print(f"Received query: {query} from user: {user_id}, mode: {current_mode}")
 
-    # Check if user wants to list files
+    # 1. Check if user wants to switch mode
+    is_switch, new_mode = is_mode_switch_intent(query)
+    if is_switch:
+        set_user_mode(user_id, new_mode)
+        mode_desc = get_mode_description(new_mode)
+        reply_text = f"✅ 已切換到 {mode_desc}\n\n現在可以開始提問了！"
+        reply_msg = TextSendMessage(text=reply_text)
+        await line_bot_api.reply_message(event.reply_token, reply_msg)
+        return
+
+    # 2. Check if user wants to see current mode
+    if query.strip() in ['模式', '目前模式', '當前模式', 'mode', 'current mode']:
+        mode_desc = get_mode_description(current_mode)
+        reply_text = f"🔍 目前模式：\n\n{mode_desc}\n\n💡 切換模式請輸入：\n• 「切換知識庫模式」\n• 「切換個人模式」"
+        reply_msg = TextSendMessage(text=reply_text)
+        await line_bot_api.reply_message(event.reply_token, reply_msg)
+        return
+
+    # 3. Get store name based on current mode
+    store_name = get_store_name(event)
+
+    # 4. Check if user wants to list files
     if is_list_files_intent(query):
         documents = await list_documents_in_store(store_name)
         await send_files_carousel(event, documents)
         return
 
-    # Otherwise, query file search
+    # 5. Otherwise, query file search
     response_text = await query_file_search(query, store_name)
 
+    # Add mode indicator to response
+    mode_indicator = "📚" if current_mode == "knowledge" else "📁"
+    response_with_mode = f"{mode_indicator} {response_text}"
+
     # Reply to user
-    reply_msg = TextSendMessage(text=response_text)
+    reply_msg = TextSendMessage(text=response_with_mode)
     await line_bot_api.reply_message(event.reply_token, reply_msg)
 
 
