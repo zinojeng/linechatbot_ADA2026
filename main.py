@@ -10,7 +10,7 @@ from typing import Optional
 from linebot.models import (
     MessageEvent, TextSendMessage, FileMessage, ImageMessage,
     PostbackEvent, TemplateSendMessage, CarouselTemplate, CarouselColumn,
-    PostbackAction
+    PostbackAction, FollowEvent
 )
 from linebot.exceptions import InvalidSignatureError
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
@@ -951,6 +951,41 @@ async def handle_postback(event: PostbackEvent):
         await line_bot_api.reply_message(event.reply_token, error_msg)
 
 
+async def handle_follow_event(event: FollowEvent):
+    """
+    Handle follow event - when user first adds the bot or re-adds after blocking.
+    Automatically start onboarding process.
+    """
+    user_id = event.source.user_id
+
+    print(f"New user followed: {user_id}")
+
+    # Check if user already has a complete profile
+    if is_user_profile_complete(user_id):
+        # User already has profile, just send welcome back message
+        welcome_msg = TextSendMessage(
+            text="👋 歡迎回來！\n\n我是您的糖尿病照護助手。\n\n您可以：\n• 詢問糖尿病相關問題（使用知識庫模式）\n• 上傳個人文件進行查詢（切換個人模式）\n• 輸入「我的資料」查看個人資料\n\n現在就開始提問吧！😊"
+        )
+        await line_bot_api.reply_message(event.reply_token, welcome_msg)
+    else:
+        # New user or incomplete profile, start onboarding
+        start_onboarding(user_id)
+        welcome_text = f"""👋 您好！歡迎使用糖尿病照護助手！
+
+我可以幫助您：
+📚 解答糖尿病相關問題
+💊 提供用藥與照護建議
+📊 分析您上傳的健康文件
+🖼️ 解讀醫療影像與報告
+
+為了提供更個人化的衛教內容，讓我先了解您的基本資料。
+
+{get_onboarding_question(1)}"""
+
+        welcome_msg = TextSendMessage(text=welcome_text)
+        await line_bot_api.reply_message(event.reply_token, welcome_msg)
+
+
 async def handle_text_message(event: MessageEvent, message):
     """
     Handle text messages - onboarding, switch mode, list files, or query with personalization.
@@ -1034,11 +1069,18 @@ async def handle_text_message(event: MessageEvent, message):
         return
 
     # 8. Otherwise, query file search with personalization
+    # Check if user has complete profile for personalized response
+    has_profile = is_user_profile_complete(user_id)
+
     response_text = await query_file_search(query, store_name, user_id)
 
     # Add mode indicator to response
     mode_indicator = "📚" if current_mode == "knowledge" else "📁"
     response_with_mode = f"{mode_indicator} {response_text}"
+
+    # Add friendly reminder if user doesn't have complete profile
+    if not has_profile and current_mode == "knowledge":
+        response_with_mode += "\n\n💡 提示：設定個人資料後，我可以根據您的年齡、教育程度、糖尿病類型等提供更適合您的建議。\n\n輸入「設定資料」開始個人化設定。"
 
     # Reply to user
     reply_msg = TextSendMessage(text=response_with_mode)
@@ -1059,8 +1101,11 @@ async def handle_callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
+        # Handle FollowEvent (when user adds the bot)
+        if isinstance(event, FollowEvent):
+            await handle_follow_event(event)
         # Handle PostbackEvent (e.g., delete file button clicks)
-        if isinstance(event, PostbackEvent):
+        elif isinstance(event, PostbackEvent):
             await handle_postback(event)
         # Handle MessageEvent
         elif isinstance(event, MessageEvent):
